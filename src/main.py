@@ -18,6 +18,10 @@ def load_bot_token():
     creds = load_creds()
     return creds["discord_credentials"]["bot_token"]
 
+def prettiest_user_id():
+    creds = load_creds()
+    return creds["discord_credentials"]["prettiest_user_id"]
+
 def get_channel_by_criteria(guild):
     # Get a list of all text channels
     text_channels = [
@@ -34,6 +38,7 @@ def get_channel_by_criteria(guild):
 
     return sorted_channels[0] if sorted_channels else None
 
+marriages = {}
 
 class MathbrookMusicReporter:
     def __init__(self, creds=load_creds()):
@@ -87,6 +92,7 @@ class MathbrookBot(commands.Bot):
         super().__init__(command_prefix="?", description=description, intents=intents)
         self.last_listened = ""
         self.pfp_filename = ""
+        self.keywords = load_creds()["discord_credentials"]["keywords"]
 
 
 bot = MathbrookBot()
@@ -125,17 +131,16 @@ def get_mathbrook_listening_msg():
     song_name = ""
     artist = None
     album = ""
-    if isinstance(song, pylast.PlayedTrack):
-        msg = f"Mathbrook is listening to: {song.track} from {song.album}"
-        embed.add_field(name="Song", value=song.track)
-        embed.add_field(name="Album", value=song.album)
-    elif isinstance(song, pylast.Track):
+    if isinstance(song, pylast.Track):
         embed.add_field(name="Song", value=(song.title))
         embed.add_field(name="Album", value=(song.get_album().title))
         embed.add_field(name="Artist", value=(song.artist))
         embed.set_image(url=song.get_cover_image(pylast.SIZE_EXTRA_LARGE))
         msg = f"Mathbrook is listening to: {song.title} from {song.get_album().title}, by {song.artist}"
         embed.set_footer(text = f"scrobbles of this track: {song.get_userplaycount()} total scrobbles: {lastfmclient.user.get_playcount()}")
+    else:
+        logging.info(f"Song is not a track, it is a {type(song)}. Returning...")
+        return "Mathbrook is not currently listening to anything", embed
     embed.set_thumbnail(url=lastfmclient.pfp)
     return msg, embed
 
@@ -174,6 +179,14 @@ def embed_avatar(ctx: discord.TextChannel, member: discord.Member = None):
     embed.set_image(url=member.avatar.url)
     embed.set_footer(text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.avatar.url)
     return embed
+
+@bot.command()
+async def pretty(ctx):
+    """Says who the prettiest user in the discord server is."""
+    if ctx.author.id == prettiest_user_id():
+        await ctx.send("you are the prettiest user in the discord server :3")
+    else:
+        await ctx.send("stinkypascal is the prettiest user in the discord server :3")
 
 @bot.command()
 async def user_avatar(ctx, member: discord.Member = None):
@@ -241,5 +254,97 @@ async def changepfp(url=None):
 @tasks.loop(minutes=60)
 async def change_profile_picture():
     await changepfp()
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send(f"Oops! The command `{ctx.invoked_with}` doesn't exist. Type `{bot.command_prefix}help` to see available commands.")
+    else:
+        # Handle other errors (optional)
+        print(f"An error occurred: {error}")
+
+@bot.event
+async def on_message(message):
+    # Ignore messages sent by the bot itself
+    if message.author == bot.user:
+        return
+
+    # Check if any keyword is in the message content (case insensitive)
+    for keyword in bot.keywords:
+        if keyword in message.content.lower():
+            # Send a response mentioning the keyword
+            await message.channel.send(f"Hey {message.author.mention}, I see you mentioned '{keyword}'!")
+            break  # Stop after the first matching keyword
+
+    # Process other commands
+    await bot.process_commands(message)
+
+@bot.command()
+async def marry(ctx, user: discord.Member):
+    """Command to marry another user."""
+    author = ctx.author
+
+    # Check if the author is already married
+    if author.id in marriages:
+        await ctx.send(f"Sorry, {author.mention}, you're already married to {marriages[author.id].mention}!")
+        return
+
+    # Check if the user is already married
+    if user.id in marriages:
+        await ctx.send(f"Sorry, {user.mention} is already married to {marriages[user.id].mention}!")
+        return
+
+    # Marry the users
+    marriages[author.id] = user
+    marriages[user.id] = author
+
+    await ctx.send(f"🎉 {author.mention} and {user.mention} are now married! Congratulations! 💍")
+
+@bot.command()
+async def divorce(ctx):
+    """Command to divorce your current partner."""
+    author = ctx.author
+
+    # Check if the author is married
+    if author.id not in marriages:
+        await ctx.send(f"Sorry, {author.mention}, you're not married!")
+        return
+
+    # Perform the divorce
+    partner = marriages[author.id]
+    del marriages[author.id]
+    del marriages[partner.id]
+
+    await ctx.send(f"💔 {author.mention} and {partner.mention} are now divorced.")
+
+@bot.command()
+async def married(ctx):
+    """Command to check who you're married to."""
+    author = ctx.author
+
+    # Check if the author is married
+    if author.id in marriages:
+        partner = marriages[author.id]
+        await ctx.send(f"{author.mention}, you're married to {partner.mention}! 💖")
+    else:
+        await ctx.send(f"{author.mention}, you're not married yet!")
+
+@bot.command()
+async def inspect_emoji(ctx, emoji: discord.Emoji):
+    """Command to post an expanded image of a given server emoji."""
+    # Extract the emoji URL
+    emoji_url = emoji.url
+
+    # Create an embed to display the emoji
+    embed = discord.Embed(
+        title=f"Emoji: {emoji.name}",
+        description=f"ID: `{emoji.id}`\nAnimated: {'Yes' if emoji.animated else 'No'}",
+        color=discord.Color.blue()
+    )
+    embed.set_image(url=emoji_url)
+    embed.set_footer(text="Here is the expanded version of the emoji!")
+
+    # Send the embed to the channel
+    await ctx.send(embed=embed)
 
 bot.run(load_bot_token())
