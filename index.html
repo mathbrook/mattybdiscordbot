@@ -1,0 +1,9 @@
+<script>
+    const port = window.location.port || 8099; // Use the page port or default to 8091
+    const socket = new WebSocket(`ws://${window.location.hostname}:${port}`);
+    socket.onmessage = function(event) {
+        const logDiv = document.getElementById("logs");
+        logDiv.innerHTML += event.data + "<br>";
+        logDiv.scrollTop = logDiv.scrollHeight;  // Auto-scroll
+    };
+</script>

@@ -6,9 +6,35 @@ import os
 import logging
 import random
 import pylast
+import asyncio
+import websockets
 
-logging.basicConfig(level=logging.INFO)
+# Store connected WebSocket clients
+clients = set()
 
+class WebSocketHandler(logging.Handler):
+    def emit(self, record):
+        log_entry = self.format(record)
+        asyncio.run(self.broadcast(log_entry))
+
+    async def broadcast(self, message):
+        to_remove = set()
+        for client in clients:
+            try:
+                await client.send(message)
+            except:
+                to_remove.add(client)
+        for client in to_remove:
+            clients.remove(client)
+
+# Configure logging
+logger = logging.getLogger("discord")
+logger.setLevel(logging.INFO)
+log_handler = WebSocketHandler()
+log_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+logger.addHandler(log_handler)
+
+logger.info("Bot is starting up...")
 def load_creds(creds_json_path=r"bot_creds.json"):
     with open(creds_json_path, "r") as credsfile:
         creds = json.load(credsfile)
